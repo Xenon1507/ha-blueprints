@@ -1,0 +1,120 @@
+blueprint:
+  name: Fenster-offen Thermostat-Steuerung
+  description: >
+    Stellt das zugehörige Heizungsthermostat auf "Fenster offen" Modus,
+    wenn ein Fenstersensor geöffnet wird. Nach einer konfigurierbaren Zeit
+    oder beim Schließen des Fensters wird der vorherige Zustand wiederhergestellt.
+    Kompatibel mit ZHA Fenstersensoren (Aqara, IKEA) und Fritz!DECT 301 Thermostaten.
+  domain: automation
+  author: Claude
+  input:
+    window_sensor:
+      name: Fenstersensor
+      description: Der Fenstersensor (ZHA), der überwacht werden soll
+      selector:
+        entity:
+          domain: binary_sensor
+          device_class: window
+
+    thermostat:
+      name: Thermostat
+      description: Das Fritz!DECT 301 Thermostat, das gesteuert werden soll
+      selector:
+        entity:
+          domain: climate
+
+    window_open_temperature:
+      name: Temperatur bei offenem Fenster
+      description: Zieltemperatur wenn das Fenster geöffnet ist (°C)
+      default: 5
+      selector:
+        number:
+          min: 4
+          max: 15
+          step: 0.5
+          unit_of_measurement: °C
+          mode: slider
+
+    timeout_duration:
+      name: Maximale Dauer
+      description: >
+        Nach dieser Zeit wird das Thermostat zurückgesetzt,
+        auch wenn das Fenster noch offen ist (in Minuten)
+      default: 15
+      selector:
+        number:
+          min: 5
+          max: 60
+          step: 5
+          unit_of_measurement: min
+          mode: slider
+
+    delay_before_action:
+      name: Verzögerung vor Aktion
+      description: >
+        Wartezeit bevor das Thermostat abgesenkt wird.
+        Verhindert Reaktion bei kurzem Öffnen (in Sekunden)
+      default: 30
+      selector:
+        number:
+          min: 0
+          max: 120
+          step: 10
+          unit_of_measurement: s
+          mode: slider
+
+variables:
+  thermostat_entity: !input thermostat
+  window_sensor_entity: !input window_sensor
+  window_open_temp: !input window_open_temperature
+
+trigger:
+  - platform: state
+    entity_id: !input window_sensor
+    to: "on"
+    id: window_opened
+
+condition:
+  - condition: state
+    entity_id: !input thermostat
+    state: "heat"
+
+action:
+  # Warte die konfigurierte Verzögerung ab
+  - delay:
+      seconds: !input delay_before_action
+
+  # Prüfe ob Fenster noch offen ist
+  - condition: state
+    entity_id: !input window_sensor
+    state: "on"
+
+  # Speichere aktuelle Temperatur
+  - variables:
+      previous_temperature: "{{ state_attr(thermostat_entity, 'temperature') }}"
+
+  # Setze Thermostat auf Fenster-offen-Temperatur
+  - service: climate.set_temperature
+    target:
+      entity_id: !input thermostat
+    data:
+      temperature: !input window_open_temperature
+
+  # Warte auf Fenster schließen ODER Timeout
+  - wait_for_trigger:
+      - platform: state
+        entity_id: !input window_sensor
+        to: "off"
+    timeout:
+      minutes: !input timeout_duration
+    continue_on_timeout: true
+
+  # Stelle ursprüngliche Temperatur wieder her
+  - service: climate.set_temperature
+    target:
+      entity_id: !input thermostat
+    data:
+      temperature: "{{ previous_temperature }}"
+
+mode: restart
+max_exceeded: silent

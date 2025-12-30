@@ -8,20 +8,23 @@ blueprint:
   domain: automation
   author: Claude
   input:
+
     window_sensor:
       name: Fenstersensor
       description: Der Fenstersensor (ZHA), der überwacht werden soll
       selector:
         entity:
           filter:
-            - label: fenster
+            - domain: binary_sensor
+              device_class: opening
 
     thermostat:
       name: Thermostat
       description: Das Fritz!DECT 301 Thermostat, das gesteuert werden soll
       selector:
         entity:
-          domain: climate
+          filter:
+            - domain: climate
 
     window_open_temperature:
       name: Temperatur bei offenem Fenster
@@ -69,7 +72,7 @@ variables:
   window_open_temp: !input window_open_temperature
 
 trigger:
-  - platform: state
+  - trigger: state
     entity_id: !input window_sensor
     to: "on"
     id: window_opened
@@ -94,7 +97,7 @@ action:
       previous_temperature: "{{ state_attr(thermostat_entity, 'temperature') }}"
 
   # Setze Thermostat auf Fenster-offen-Temperatur
-  - service: climate.set_temperature
+  - action: climate.set_temperature
     target:
       entity_id: !input thermostat
     data:
@@ -102,7 +105,7 @@ action:
 
   # Warte auf Fenster schließen ODER Timeout
   - wait_for_trigger:
-      - platform: state
+      - trigger: state
         entity_id: !input window_sensor
         to: "off"
     timeout:
@@ -110,7 +113,7 @@ action:
     continue_on_timeout: true
 
   # Stelle ursprüngliche Temperatur wieder her
-  - service: climate.set_temperature
+  - action: climate.set_temperature
     target:
       entity_id: !input thermostat
     data:
